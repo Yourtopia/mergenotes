@@ -18,7 +18,41 @@
     "sortify": "^1.0.4",
     "stream-to-pull-stream": "^1.7.2",
     "tweetnacl": "~0.12.2",
-    "ws": "^1.0.1"
+    "ws": "^1.0.1",
+    "@bower_components/alertifyjs": "alertifyjs/alertify.js#1.0.11",
+    "@bower_components/bootstrap": "twbs/bootstrap#^v4.0.0",
+    "@bower_components/bootstrap-tokenfield": "sliptree/bootstrap-tokenfield#^0.12.1",
+    "@bower_components/chainpad": "xwiki-contrib/chainpad#^5.1.0",
+    "@bower_components/chainpad-crypto": "xwiki-labs/chainpad-crypto#^0.2.0",
+    "@bower_components/chainpad-listmap": "xwiki-labs/chainpad-listmap#^0.5.0",
+    "@bower_components/chainpad-netflux": "xwiki-labs/chainpad-netflux#^0.7.0",
+    "@bower_components/ckeditor": "ckeditor/ckeditor-releases#4.7.3",
+    "@bower_components/codemirror": "components/codemirror#^5.19.0",
+    "@bower_components/components-font-awesome": "components/font-awesome#^4.6.3",
+    "@bower_components/croppie": "Foliotek/Croppie#^2.5.0",
+    "@bower_components/diff-dom": "fiduswriter/diffDOM#2.1.1",
+    "@bower_components/es6-promise": "components/es6-promise#^3.2.2",
+    "@bower_components/file-saver": "eligrey/FileSaver.js#1.3.1",
+    "@bower_components/html2canvas": "niklasvh/html2canvas#^0.4.1",
+    "@bower_components/hyperjson": "xwiki-labs/hyperjson#~1.4.0",
+    "@bower_components/jquery": "jquery/jquery-dist#~2.1.3",
+    "@bower_components/json.sortify": "ThomasR/JSON.sortify#~2.1.0",
+    "@bower_components/jszip": "Stuk/jszip#^3.1.5",
+    "@bower_components/less": "less/less#3.7.1",
+    "@bower_components/localforage": "mozilla/localForage#^1.5.2",
+    "@bower_components/marked": "chjj/marked#0.5.0",
+    "@bower_components/netflux-websocket": "xwiki-labs/netflux-websocket#^0.1.5",
+    "@bower_components/nthen": "cjdelisle/nthen#^0.1.5",
+    "@bower_components/open-sans-fontface": "FontFaceKit/open-sans#^1.4.2",
+    "@bower_components/rangy": "timdown/rangy-release#~1.3.0",
+    "@bower_components/require-css": "guybedford/require-css#0.1.10",
+    "@bower_components/requirejs": "jrburke/requirejs-bower#2.3.5",
+    "@bower_components/requirejs-plugins": "millermedeiros/requirejs-plugins#^1.0.3",
+    "@bower_components/saferphore": "cjdelisle/saferphore#^0.0.1",
+    "@bower_components/scrypt-async": "dchest/scrypt-async-js#1.2.0",
+    "@bower_components/secure-fabric.js": "cjdelisle/secure-fabric.js#secure-v1.7.9",
+    "@bower_components/sortablejs": "RubaXa/Sortable#^1.6.0",
+    "@bower_components/tweetnacl": "dchest/tweetnacl-js#0.12.2"
   },
   "devDependencies": {
     "flow-bin": "^0.59.0",
@@ -37,6 +71,10 @@
     "lint:less": "./node_modules/lesshint/bin/lesshint -c ./.lesshintrc ./customize.dist/src/less2/",
     "flow": "./node_modules/.bin/flow",
     "test": "node TestSelenium.js",
-    "template": "cd customize.dist/src && for page in ../index.html ../privacy.html ../terms.html ../about.html ../contact.html ../what-is-cryptpad.html ../features.html ../../www/login/index.html ../../www/register/index.html ../../www/user/index.html;do echo $page; cp template.html $page; done;"
+    "template": "cd customize.dist/src && for page in ../index.html ../privacy.html ../terms.html ../about.html ../contact.html ../what-is-cryptpad.html ../features.html ../../www/login/index.html ../../www/register/index.html ../../www/user/index.html;do echo $page; cp template.html $page; done;",
+    "postinstall": "node -e \"try { require('fs').symlinkSync(require('path').resolve('node_modules/@bower_components'), 'www/bower_components', 'junction') } catch (e) { }\""
+  },
+  "engines": {
+    "yarn": ">= 1.0.0"
   }
 }
