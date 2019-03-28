@@ -1,22 +1,3 @@
-require(['/api/config'], function (ApiConfig) {
-    // see ckeditor_base.js getUrl()
-    window.CKEDITOR_GETURL = function (resource) {
-        if (resource.indexOf( '/' ) === 0) {
-            resource = window.CKEDITOR.basePath.replace(/\/bower_components\/.*/, '') + resource;
-        } else if (resource.indexOf(':/') === -1) {
-            resource = window.CKEDITOR.basePath + resource;
-        }
-        if (resource[resource.length - 1] !== '/' && resource.indexOf('ver=') === -1) {
-            var args = ApiConfig.requireConf.urlArgs;
-            if (resource.indexOf('/bower_components/') !== -1) {
-                args = 'ver=' + window.CKEDITOR.timestamp;
-            }
-            resource += (resource.indexOf('?') >= 0 ? '&' : '?') + args;
-        }
-        return resource;
-    };
-    require(['/bower_components/ckeditor/ckeditor.js']);
-});
 define([
     'jquery',
     '/bower_components/hyperjson/hyperjson.js',
@@ -27,7 +8,6 @@ define([
     '/customize/messages.js',
     '/pad/links.js',
     '/pad/export.js',
-    '/pad/cursor.js',
     '/bower_components/nthen/index.js',
     '/common/media-tag.js',
     '/api/config',
@@ -39,11 +19,12 @@ define([
     '/customize/application_config.js',
     '/common/test.js',
 
+    '/pad2/build/ckeditor.js',
     '/bower_components/diff-dom/diffDOM.js',
 
     'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
     'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
-    'less!/pad/app-pad.less'
+    'less!/pad2/app-pad.less'
 ], function (
     $,
     Hyperjson,
@@ -54,7 +35,6 @@ define([
     Messages,
     Links,
     Exporter,
-    Cursors,
     nThen,
     MediaTag,
     ApiConfig,
@@ -64,10 +44,12 @@ define([
     h,
     ChainPad,
     AppConfig,
-    Test
+    Test,
+    CKEditor
 )
 {
     var DiffDom = window.diffDOM;
+window.CKEditor = CKEditor;
 
     var slice = function (coll) {
         return Array.prototype.slice.call(coll);
@@ -119,10 +101,8 @@ define([
             el.getAttribute('class').split(' ').indexOf('non-realtime') !== -1);
     };
 
-    var isCursor = Cursors.isCursor;
-
     var shouldSerialize = function (el) {
-        return isNotMagicLine(el) && !isWidget(el) && !isCursor(el);
+        return isNotMagicLine(el) && !isWidget(el);
     };
 
     // MEDIATAG: Filter attributes in the serialized elements
@@ -229,18 +209,6 @@ define([
                     }
                 }
 
-                // Other users cursor
-                if (Cursors.preDiffApply(info)) {
-                    return true;
-                }
-
-                if (info.node && info.node.tagName === 'DIV' &&
-                    info.node.getAttribute('class') &&
-                    /cp-link-clicked/.test(info.node.getAttribute('class'))) {
-                    if (info.diff.action === 'removeElement') {
-                        return true;
-                    }
-                }
 
                 // MEDIATAG
                 // Never modify widget ids
@@ -285,13 +253,6 @@ define([
                     }
                 }
 
-                if (info.node && info.node.tagName === 'BODY') {
-                    if (info.diff.action === 'removeAttribute' &&
-                        ['class', 'spellcheck'].indexOf(info.diff.name) !== -1) {
-                        return true;
-                    }
-                }
-
                 /* DiffDOM will filter out magicline plugin elements
                     in practice this will make it impossible to use it
                     while someone else is typing, which could be annoying.
@@ -324,18 +285,17 @@ define([
                     }
                 }
 
-                // Do not change the spellcheck value in view mode
-                if (readOnly && info.node && info.node.tagName === 'BODY' &&
-                    info.diff.action === 'modifyAttribute' && info.diff.name === 'spellcheck') {
-                    return true;
-                }
-                // Do not change the contenteditable value in view mode
-                if (readOnly && info.node && info.node.tagName === 'BODY' &&
-                    info.diff.action === 'modifyAttribute' && info.diff.name === 'contenteditable') {
-                    return true;
+                if (info.node && info.node.tagName === 'DIV' && info.node.classList.contains('.ck-content')) {
+                    console.log('here');
+                    if (info.diff.action === 'removeAttribute' &&
+                        ['class', 'spellcheck'].indexOf(info.diff.name) !== -1) {
+                        return true;
+                    }
+                    if (readOnly && info.diff.action === 'modifyAttribute' && info.diff.name === 'contenteditable') {
+                        return true;
+                    }
                 }
 
-/*
                 cursor.update();
 
                 // no use trying to recover the cursor if it doesn't exist
@@ -344,7 +304,6 @@ define([
                 /*  frame is either 0, 1, 2, or 3, depending on which
                     cursor frames were affected: none, first, last, or both
                 */
-/*
                 var frame = info.frame = cursor.inNode(info.node);
 
                 if (!frame) { return; }
@@ -356,15 +315,19 @@ define([
                     if (frame & 1) {
                         // push cursor start if necessary
                         cursor.transformRange(cursor.Range.start, ops);
+                        /*if (pushes.commonStart < cursor.Range.start.offset) {
+                            cursor.Range.start.offset += pushes.delta;
+                        }*/
                     }
                     if (frame & 2) {
                         // push cursor end if necessary
                         cursor.transformRange(cursor.Range.end, ops);
+                        /*if (pushes.commonStart < cursor.Range.end.offset) {
+                            cursor.Range.end.offset += pushes.delta;
+                        }*/
                     }
                 }
-*/
             },
-/*
             postDiffApply: function (info) {
                 if (info.frame) {
                     if (info.node) {
@@ -378,7 +341,6 @@ define([
                     cursor.fixSelection(sel, range);
                 }
             }
-*/
         };
     };
 
@@ -432,6 +394,7 @@ define([
     };
 
     var restoreMediaTags = function (tempDom, mediaTagMap) {
+return;
         var tags = tempDom.querySelectorAll('media-tag:empty');
         Array.prototype.slice.call(tags).forEach(function (tag) {
             var src = tag.getAttribute('src');
@@ -452,16 +415,12 @@ define([
         if ($faLink.length) {
             $html.find('iframe').contents().find('head').append($faLink.clone());
         }
-        var ml = Ckeditor.instances.editor1.plugins.magicline.backdoor.that.line.$;
+        /*var ml = Ckeditor.instances.editor1.plugins.magicline.backdoor.that.line.$;
         [ml, ml.parentElement].forEach(function (el) {
             el.setAttribute('class', 'non-realtime');
         });
 
-        var $iframe = $('html').find('iframe').contents();
         var ifrWindow = $html.find('iframe')[0].contentWindow;
-
-        var customCss = '/customize/ckeditor-contents.css?' + window.CKEDITOR.CRYPTPAD_URLARGS;
-        $iframe.find('head').append('<link href="' + customCss + '" type="text/css" rel="stylesheet" _fcktemp="true"/>');
 
         framework._.sfCommon.addShortcuts(ifrWindow);
 
@@ -485,62 +444,10 @@ define([
             childList: true
         });
 
-        var inner = window.inner = documentBody;
-        var $inner = $(inner);
+        var inner = window.inner = documentBody;*/
+var inner = $('.ck-content')[0];
 
-        var onLinkClicked = function (e) {
-            var $target = $(e.target);
-            if (!$target.is('a')) { return; }
-            var href = $target.attr('href');
-            if (!href || href[0] === '#') { return; }
-            e.preventDefault();
-            e.stopPropagation();
-
-            var rect = e.target.getBoundingClientRect();
-            var rect0 = inner.getBoundingClientRect();
-            var l = (rect.left - rect0.left)+'px';
-            var t = rect.bottom + $iframe.scrollTop() +'px';
-
-            var a = h('a', { href: href}, href);
-            var link = h('div.cp-link-clicked.non-realtime', {
-                contenteditable: false,
-                style: 'top:'+t+';left:'+l
-            }, [ a ]);
-            var $link = $(link);
-            $inner.append(link);
-
-            if (rect.left + $link.outerWidth() - rect0.left > $inner.width()) {
-                $link.css('left', 'unset');
-                $link.css('right', 0);
-            }
-
-            $(a).click(function (ee) {
-                ee.preventDefault();
-                ee.stopPropagation();
-                framework._.sfCommon.openUnsafeURL(href);
-                $link.remove();
-            });
-            $link.on('mouseleave', function () {
-                $link.remove();
-            });
-        };
-        var removeClickedLink = function () {
-            $inner.find('.cp-link-clicked').remove();
-        };
-
-        $inner.click(function (e) {
-            if (e.target.nodeName.toUpperCase() === 'A') {
-                removeClickedLink();
-                return void onLinkClicked(e);
-            }
-            removeClickedLink();
-        });
-
-        // My cursor
         var cursor = module.cursor = Cursor(inner);
-
-        // Display other users cursor
-        var cursors = Cursors.create(inner, hjsonToDom, cursor);
 
         var openLink = function (e) {
             var el = e.currentTarget;
@@ -555,12 +462,13 @@ define([
 
         framework.onEditableChange(function (unlocked) {
             if (!framework.isReadOnly()) {
-                $inner.attr('contenteditable', '' + Boolean(unlocked));
+                $(inner).attr('contenteditable', '' + Boolean(unlocked));
             }
-            $inner.css({ background: unlocked ? '#fff' : '#eee' });
+            $(inner).css({ background: unlocked ? '#fff' : '#eee' });
         });
 
         framework.setMediaTagEmbedder(function ($mt) {
+return;
             $mt.attr('contenteditable', 'false');
             //$mt.attr('tabindex', '1');
             //MEDIATAG
@@ -572,7 +480,7 @@ define([
         framework.setTitleRecommender(function () {
             var text;
             if (['h1', 'h2', 'h3'].some(function (t) {
-                var $header = $inner.find(t + ':first-of-type');
+                var $header = $(inner).find(t + ':first-of-type');
                 if ($header.length && $header.text()) {
                     text = $header.text();
                     return true;
@@ -582,24 +490,12 @@ define([
 
         var DD = new DiffDom(mkDiffOptions(cursor, framework.isReadOnly()));
 
-        var cursorStopped = false;
-        var cursorTo;
-        var updateCursor = function () {
-            if (cursorTo) { clearTimeout(cursorTo); }
-
-            // If we're receiving content
-            if (cursorStopped) { return void setTimeout(updateCursor, 100); }
-
-            cursorTo = setTimeout(function () {
-                framework.updateCursor();
-            }, 500); // 500ms to make sure it is sent after chainpad sync
-        };
-
         // apply patches, and try not to lose the cursor in the process!
         framework.onContentUpdate(function (hjson) {
             //if (!Array.isArray(hjson)) { throw new Error(Messages.typeError); }
+            console.log(hjson);
             var userDocStateDom = hjsonToDom(hjson);
-            cursorStopped = true;
+console.log(userDocStateDom);
 
             userDocStateDom.setAttribute("contenteditable",
                 inner.getAttribute('contenteditable'));
@@ -610,30 +506,35 @@ define([
             userDocStateDom.normalize();
             inner.normalize();
 
+/*
             $(userDocStateDom).find('span[data-cke-display-name="media-tag"]:empty').each(function (i, el) {
                 $(el).remove();
             });
+*/
 
-            // Get cursor position
-            cursor.offsetUpdate();
-            var oldText = inner.outerHTML;
+            var newFlatDom = hjson;
+            var oldFlatDom = FlatDom.fromDOM(inner, shouldSerialize, hjsonFilters);
 
-            // Apply the changes
-            var patch = (DD).diff(inner, userDocStateDom);
-            (DD).apply(inner, patch);
+            console.log(inner);
+            console.log(inner.innerHTML);
+            editor.setData(userDocStateDom.innerHTML);
 
-            // Restore cursor position
-            var newText = inner.outerHTML;
-            var ops = ChainPad.Diff.diff(oldText, newText);
-            cursor.restoreOffset(ops);
 
-            setTimeout(function () {
-                cursorStopped = false;
-                updateCursor();
-            }, 200);
 
+
+            /*var patch = (DD).diff(inner, userDocStateDom);
+            console.log(patch);
+            (DD).apply(inner, patch);*/
+
+
+
+            console.log(inner.innerHTML);
+console.log(editor.getData());
+editor.updateSourceElement();
+console.log(editor.getData());
+/*
             // MEDIATAG: Migrate old mediatags to the widget system
-            $inner.find('media-tag:not(.cke_widget_element)').each(function (i, el) {
+            $(inner).find('media-tag:not(.cke_widget_element)').each(function (i, el) {
                 var element = new window.CKEDITOR.dom.element(el);
                 editor.widgets.initOn( element, 'mediatag' );
             });
@@ -644,10 +545,11 @@ define([
             editor.widgets.checkWidgets();
 
             if (framework.isReadOnly()) {
-                var $links = $inner.find('a');
+                var $links = $(inner).find('a');
                 // off so that we don't end up with multiple identical handlers
                 $links.off('click', openLink).on('click', openLink);
             }
+*/
         });
 
         framework.setTextContentGetter(function () {
@@ -662,18 +564,15 @@ define([
             return str;
         });
         framework.setContentGetter(function () {
-            $inner.find('span[data-cke-display-name="media-tag"]:empty').each(function (i, el) {
+            $(inner).find('span[data-cke-display-name="media-tag"]:empty').each(function (i, el) {
                 $(el).remove();
             });
 
-            // We have to remove the cursors before getting the content because they split
-            // the text nodes and OT/ChainPad would freak out
-            cursors.removeCursors();
-
+/*
             displayMediaTags(framework, inner, mediaTagMap);
+*/
             inner.normalize();
             return FlatDom.fromDOM(inner, shouldSerialize, hjsonFilters);
-
         });
 
         $bar.find('#cke_1_toolbar_collapser').hide();
@@ -684,7 +583,9 @@ define([
         }
 
         framework.onReady(function (newPad) {
+/*
             editor.focus();
+*/
 
             if (!module.isMaximized) {
                 module.isMaximized = true;
@@ -700,9 +601,10 @@ define([
             }
 
             if (framework.isReadOnly()) {
-                $inner.attr('contenteditable', 'false');
+                $(inner).attr('contenteditable', 'false');
             }
 
+/*
             var fmConfig = {
                 ckeditor: editor,
                 body: $('body'),
@@ -724,21 +626,16 @@ define([
             };
             window.APP.FM = framework._.sfCommon.createFileManager(fmConfig);
 
-            framework._.sfCommon.getAttribute(['pad', 'spellcheck'], function (err, data) {
-                if (framework.isReadOnly()) { return; }
-                if (data) {
-                    $iframe.find('body').attr('spellcheck', true);
-                }
-            });
             framework._.sfCommon.getAttribute(['pad', 'width'], function (err, data) {
                 if (data) {
+                    var $iframe = $('html').find('iframe').contents();
                     $iframe.find('html').addClass('cke_body_width');
                 }
             });
 
             framework._.sfCommon.isPadStored(function (err, val) {
                 if (!val) { return; }
-                var b64images = $inner.find('img[src^="data:image"]:not(.cke_reset)');
+                var b64images = $(inner).find('img[src^="data:image"]:not(.cke_reset)');
                 if (b64images.length && framework._.sfCommon.isLoggedIn()) {
                     var no = h('button.cp-corner-cancel', Messages.cancel);
                     var yes = h('button.cp-corner-primary', Messages.ok);
@@ -767,6 +664,7 @@ define([
                     });
                 }
             });
+*/
             /*setTimeout(function () {
                 $('iframe.cke_wysiwyg_frame').focus();
                 editor.focus();
@@ -802,13 +700,6 @@ define([
             return hjson;
         });
 
-        /* Display the cursor of other users and send our cursor */
-        framework.setCursorGetter(cursors.cursorGetter);
-        framework.onCursorUpdate(cursors.onCursorUpdate);
-        inner.addEventListener('click', updateCursor);
-        inner.addEventListener('keyup', updateCursor);
-
-
         /* hitting enter makes a new line, but places the cursor inside
             of the <br> instead of the <p>. This makes it such that you
             cannot type until you click, which is rather unnacceptable.
@@ -818,22 +709,8 @@ define([
             the first such keypress will not be inserted into the P. */
         inner.addEventListener('keydown', cursor.brFix);
 
-        /*
-            CkEditor emits a change event when it detects new content in the editable area.
-            Our problem is that this event is sent asynchronously and late after a keystroke.
-            The result is that between the keystroke and the change event, chainpad may
-            receive remote changes and so it can wipe the newly inserted content (because
-            chainpad work synchronously), and the merged text is missing a few characters.
-            To fix this, we have to call `framework.localChange` sooner. We can't listen for
-            the "keypress" event because it is trigger before the character is inserted.
-            The solution is the "input" event, triggered by the browser as soon as the
-            character is inserted.
-        */
-        inner.addEventListener('input', function () {
-            framework.localChange();
-            updateCursor();
-        });
-        editor.on('change', framework.localChange);
+        //editor.on('change', framework.localChange);
+        editor.model.document.on('change', framework.localChange);
 
         // export the typing tests to the window.
         // call like `test = easyTest()`
@@ -842,23 +719,12 @@ define([
             cursor.update();
             //var start = cursor.Range.start;
             //var test = TypingTest.testInput(inner, start.el, start.offset, framework.localChange);
-            var test = TypingTest.testPad(editor, framework.localChange);
+            var test = TypingTest.testInput2(editor);
             framework.localChange();
             return test;
         };
 
-
-        // Fix the scrollbar if it's reset when clicking on a button (firefox only?)
-        var buttonScrollTop;
-        $('.cke_toolbox_main').find('.cke_button, .cke_combo_button').mousedown(function () {
-            buttonScrollTop = $('iframe').contents().scrollTop();
-            setTimeout(function () {
-                $('iframe').contents().scrollTop(buttonScrollTop);
-            });
-        });
-
-
-        $('.cke_toolbox_main').find('.cke_button').click(function () {
+        $bar.find('.cke_button').click(function () {
             var e = this;
             var classString = e.getAttribute('class');
             var classes = classString.split(' ').filter(function (c) {
@@ -881,41 +747,19 @@ define([
 
         nThen(function (waitFor) {
             Framework.create({
-                toolbarContainer: '#cke_1_toolbox',
-                contentContainer: '#cke_editor1 > .cke_inner',
-                //patchTransformer: ChainPad.NaiveJSONTransformer,
-                /*thumbnail: {
-                    getContainer: function () { return $('iframe').contents().find('html')[0]; },
-                    filter: function (el, before) {
-                        if (before) {
-                            module.cursor.update();
-                            $(el).parents().css('overflow', 'visible');
-                            $(el).css('max-width', '1200px');
-                            $(el).css('max-height', Math.max(600, $(el).width()) + 'px');
-                            $(el).css('overflow', 'hidden');
-                            $(el).find('body').css('background-color', 'transparent');
-                            return;
-                        }
-                        $(el).parents().css('overflow', '');
-                        $(el).css('max-width', '');
-                        $(el).css('max-height', '');
-                        $(el).css('overflow', '');
-                        $(el).find('body').css('background-color', '#fff');
-                        var sel = module.cursor.makeSelection();
-                        var range = module.cursor.makeRange();
-                        module.cursor.fixSelection(sel, range);
-                    }
-                }*/
+                toolbarContainer: '#cp-toolbar',
+                contentContainer: '#cp-app-pad',
             }, waitFor(function (fw) { window.APP.framework = framework = fw; }));
 
             nThen(function (waitFor) {
-                ckEditorAvailable(waitFor(function (ck) {
+                /*ckEditorAvailable(waitFor(function (ck) {
                     Ckeditor = ck;
                     require(['/pad/wysiwygarea-plugin.js'], waitFor());
-                }));
+                }));*/
+                Ckeditor = CKEditor;
                 $(waitFor());
             }).nThen(function (waitFor) {
-                Ckeditor.config.toolbarCanCollapse = true;
+                /*Ckeditor.config.toolbarCanCollapse = true;
                 if (screen.height < 800) {
                     Ckeditor.config.toolbarStartupExpanded = false;
                     $('meta[name=viewport]').attr('content',
@@ -959,21 +803,27 @@ define([
                             }
                         });
                     } catch (e) {}
-                }));
+                }));*/
+                Ckeditor.create($('#editor1')[0]).then(waitFor(function (editor0) {
+                    module.ckeditor = editor = editor0;
+                })).catch(function (error) {
+                    UI.errorLoadingScreen(error);
+                });
             }).nThen(function () {
-                editor.plugins.mediatag.import = function ($mt) {
+                console.log(editor);
+                /*editor.plugins.mediatag.import = function ($mt) {
                     framework._.sfCommon.importMediaTag($mt);
                 };
-                Links.addSupportForOpeningLinksInNewTab(Ckeditor)({editor: editor});
+                Links.addSupportForOpeningLinksInNewTab(Ckeditor)({editor: editor});*/
             }).nThen(function () {
                 // Move ckeditor parts to have a structure like the other apps
-                var $toolbarContainer = $('#cke_1_top');
+                /*var $toolbarContainer = $('#cke_1_top');
                 var $contentContainer = $('#cke_1_contents');
                 var $mainContainer = $('#cke_editor1');
                 $contentContainer.prepend($toolbarContainer.find('.cke_toolbox_main'));
                 $mainContainer.prepend($toolbarContainer);
                 $contentContainer.find('.cke_toolbox_main').addClass('cke_reset_all');
-                $toolbarContainer.removeClass('cke_reset_all');
+                $toolbarContainer.removeClass('cke_reset_all');*/
             }).nThen(waitFor());
 
         }).nThen(function (/*waitFor*/) {
