@@ -9,6 +9,7 @@ define([
     '/common/common-hash.js',
     '/common/modes.js',
     '/common/visible.js',
+    '/common/TypingTests.js',
     '/customize/messages.js',
     'cm/lib/codemirror',
 
@@ -51,6 +52,7 @@ define([
     Hash,
     Modes,
     Visible,
+    TypingTest,
     Messages,
     CMeditor)
 {
@@ -68,6 +70,16 @@ define([
         'xml',
     ]);
 
+    var mkPrintButton = function (framework, $content, $print) {
+        var $printButton = framework._.sfCommon.createButton('print', true);
+        $printButton.click(function () {
+            $print.html($content.html());
+            window.focus();
+            window.print();
+            framework.feedback('PRINT_CODE');
+        });
+        framework._.toolbar.$drawer.append($printButton);
+    };
     var mkMarkdownTb = function (editor, framework) {
         var $codeMirrorContainer = $('#cp-app-code-container');
         var markdownTb = framework._.sfCommon.createMarkdownToolbar(editor);
@@ -263,6 +275,11 @@ define([
 
         var previewPane = mkPreviewPane(editor, CodeMirror, framework, isPresentMode);
         var markdownTb = mkMarkdownTb(editor, framework);
+
+        var $print = $('#cp-app-code-print');
+        var $content = $('#cp-app-code-preview-content');
+        mkPrintButton(framework, $content, $print);
+
         mkHelpMenu(framework);
 
         var evModeChange = Util.mkEvent();
@@ -293,11 +310,24 @@ define([
         });
 
         framework.setContentGetter(function () {
+            CodeMirror.removeCursors();
             var content = CodeMirror.getContent();
             content.highlightMode = CodeMirror.highlightMode;
             previewPane.draw();
             return content;
         });
+
+        var cursorTo;
+        var updateCursor = function () {
+            if (cursorTo) { clearTimeout(cursorTo); }
+            if (editor._noCursorUpdate) { return; }
+            cursorTo = setTimeout(function () {
+                framework.updateCursor();
+            }, 500); // 500ms to make sure it is sent after chainpad sync
+        };
+        framework.onCursorUpdate(CodeMirror.setRemoteCursor);
+        framework.setCursorGetter(CodeMirror.getCursor);
+        editor.on('cursorActivity', updateCursor);
 
         framework.onEditableChange(function () {
             editor.setOption('readOnly', framework.isLocked() || framework.isReadOnly());
@@ -345,6 +375,12 @@ define([
         editor.on('change', framework.localChange);
 
         framework.start();
+
+
+        window.easyTest = function () {
+            var test = TypingTest.testCode(editor);
+            return test;
+        };
     };
 
     var getThumbnailContainer = function () {

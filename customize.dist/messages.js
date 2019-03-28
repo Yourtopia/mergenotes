@@ -1,14 +1,15 @@
 (function () {
 // add your module to this map so it gets used
 var map = {
-    'fr': 'Français',
-    'es': 'Español',
-    'pl': 'Polski',
     'de': 'Deutsch',
+    'es': 'Español',
+    'el': 'Ελληνικά',
+    'fr': 'Français',
+    'pl': 'Polski',
     'pt-br': 'Português do Brasil',
     'ro': 'Română',
+    'ru': 'Русский',
     'zh': '繁體中文',
-    'el': 'Ελληνικά',
 };
 
 var messages = {};
@@ -24,6 +25,22 @@ var getLanguage = messages._getLanguage = function () {
             (map[l.split('-')[0]] ? l.split('-')[0] : 'en');
 };
 var language = getLanguage();
+
+// Translations files were migrated from requirejs modules to json.
+// To avoid asking every administrator to update their customized translation files,
+// we use a requirejs map to redirect the old path to the new one and to use the
+// requirejs json plugin
+var reqPaths = {
+    "/common/translations/messages.js":"json!/common/translations/messages.json"
+};
+Object.keys(map).forEach(function (k) {
+    reqPaths["/common/translations/messages."+k+".js"] = "json!/common/translations/messages."+k+".json";
+});
+require.config({
+    map: {
+        "*": reqPaths
+    }
+});
 
 var req = ['/common/common-util.js', '/customize/translations/messages.js'];
 if (language && map[language]) { req.push('/customize/translations/messages.' + language + '.js'); }

@@ -3,12 +3,14 @@ define([
     '/bower_components/marked/marked.min.js',
     '/common/common-hash.js',
     '/common/common-util.js',
+    '/common/hyperscript.js',
     '/common/media-tag.js',
     '/common/highlight/highlight.pack.js',
+    '/customize/messages.js',
     '/bower_components/diff-dom/diffDOM.js',
     '/bower_components/tweetnacl/nacl-fast.min.js',
     'css!/common/highlight/styles/github.css'
-],function ($, Marked, Hash, Util, MediaTag, Highlight) {
+],function ($, Marked, Hash, Util, h, MediaTag, Highlight, Messages) {
     var DiffMd = {};
 
     var DiffDOM = window.diffDOM;
@@ -28,15 +30,62 @@ define([
     };
 
     Marked.setOptions({
+        //sanitize: true, // Disable HTML
         renderer: renderer,
         highlight: highlighter(),
     });
 
-    DiffMd.render = function (md) {
-        return Marked(md);
+    var toc = [];
+    var getTOC = function () {
+        var content = [h('h2', Messages.markdown_toc)];
+        toc.forEach(function (obj) {
+            // Only include level 2 headings
+            var level = obj.level - 1;
+            if (level < 1) { return; }
+            var a = h('a.cp-md-toc-link', {
+                href: '#',
+                'data-href': obj.id,
+                title: obj.title
+            });
+            a.innerHTML = obj.title;
+            content.push(h('p.cp-md-toc-'+level, ['• ',  a]));
+        });
+        return h('div.cp-md-toc', content).outerHTML;
+    };
+
+    DiffMd.render = function (md, sanitize) {
+        var r = Marked(md, {
+            sanitize: sanitize
+        });
+
+        // Add Table of Content
+        r = r.replace(/<div class="cp-md-toc"><\/div>/g, getTOC());
+        toc = [];
+
+        return r;
     };
 
     var mediaMap = {};
+
+    renderer.heading = function (text, level) {
+        var i = 0;
+        var safeText = text.toLowerCase().replace(/[^\w]+/g, '-');
+        var getId = function () {
+            return 'cp-md-' + i + '-' + safeText;
+        };
+        var id = getId();
+        var isAlreadyUsed = function (obj) { return obj.id === id; };
+        while (toc.some(isAlreadyUsed)) {
+            i++;
+            id = getId();
+        }
+        toc.push({
+            level: level,
+            id: id,
+            title: text
+        });
+        return "<h" + level + " id=\"" + id + "\"><a href=\"#" + id + "\" class=\"anchor\"></a>" + text + "</h" + level + ">";
+    };
 
     // Tasks list
     var checkedTaskItemPtn = /^\s*(<p>)?\[[xX]\](<\/p>)?\s*/;
@@ -48,22 +97,22 @@ define([
         var hasBogusInput = bogusCheckPtn.test(text);
         if (isCheckedTaskItem) {
             text = text.replace(checkedTaskItemPtn,
-                '<i class="fa fa-check-square" aria-hidden="true"></i>&nbsp;') + '\n';
+                '<i class="fa fa-check-square" aria-hidden="true"></i>') + '\n';
         }
         if (isUncheckedTaskItem) {
             text = text.replace(uncheckedTaskItemPtn,
-                '<i class="fa fa-square-o" aria-hidden="true"></i>&nbsp;') + '\n';
+                '<i class="fa fa-square-o" aria-hidden="true"></i>') + '\n';
         }
         if (!isCheckedTaskItem && !isUncheckedTaskItem && hasBogusInput) {
             if (/checked/.test(text)) {
                 text = text.replace(bogusCheckPtn, 
-                '<i class="fa fa-check-square" aria-hidden="true"></i>&nbsp;') + '\n';
+                '<i class="fa fa-check-square" aria-hidden="true"></i>') + '\n';
             } else if (/disabled/.test(text)) {
                 text = text.replace(bogusCheckPtn, 
-                '<i class="fa fa-square-o" aria-hidden="true"></i>&nbsp;') + '\n';
+                '<i class="fa fa-square-o" aria-hidden="true"></i>') + '\n';
             }
         }
-        var cls = (isCheckedTaskItem || isUncheckedTaskItem) ? ' class="todo-list-item"' : '';
+        var cls = (isCheckedTaskItem || isUncheckedTaskItem || hasBogusInput) ? ' class="todo-list-item"' : '';
         return '<li'+ cls + '>' + text + '</li>\n';
     };
     renderer.image = function (href, title, text) {
@@ -92,6 +141,9 @@ define([
     };
 
     renderer.paragraph = function (p) {
+        if (p === '[TOC]') {
+            return '<p><div class="cp-md-toc"></div></p>';
+        }
         return /<media\-tag[\s\S]*>/i.test(p)? p + '\n': '<p>' + p + '</p>\n';
     };
 
@@ -101,8 +153,9 @@ define([
         'IFRAME',
         'OBJECT',
         'APPLET',
-        //'VIDEO', // privacy implications of videos are the same as images
-        //'AUDIO', // same with audio
+        'VIDEO', // privacy implications of videos are the same as images
+        'AUDIO', // same with audio
+        'SVG'
     ];
     var unsafeTag = function (info) {
         /*if (info.node && $(info.node).parents('media-tag').length) {
@@ -117,10 +170,10 @@ define([
         }
         if (['addElement', 'replaceElement'].indexOf(info.diff.action) !== -1) {
             var msg = "Rejecting forbidden tag of type (%s)";
-            if (info.diff.element && forbiddenTags.indexOf(info.diff.element.nodeName) !== -1) {
+            if (info.diff.element && forbiddenTags.indexOf(info.diff.element.nodeName.toUpperCase()) !== -1) {
                 console.log(msg, info.diff.element.nodeName);
                 return true;
-            } else if (info.diff.newValue && forbiddenTags.indexOf(info.diff.newValue.nodeName) !== -1) {
+            } else if (info.diff.newValue && forbiddenTags.indexOf(info.diff.newValue.nodeName.toUpperCase()) !== -1) {
                 console.log("Replacing restricted element type (%s) with PRE", info.diff.newValue.nodeName);
                 info.diff.newValue.nodeName = 'PRE';
             }
@@ -142,7 +195,7 @@ define([
 
     var removeForbiddenTags = function (root) {
         if (!root) { return; }
-        if (forbiddenTags.indexOf(root.nodeName) !== -1) { removeNode(root); }
+        if (forbiddenTags.indexOf(root.nodeName.toUpperCase()) !== -1) { removeNode(root); }
         slice(root.children).forEach(removeForbiddenTags);
     };
 
@@ -242,6 +295,15 @@ define([
                     childList: true,
                     characterData: false
                 });
+            });
+            // Fix Table of contents links
+            $content.find('a.cp-md-toc-link').off('click').click(function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var $a = $(this);
+                if (!$a.attr('data-href')) { return; }
+                var target = document.getElementById($a.attr('data-href'));
+                if (target) { target.scrollIntoView(); }
             });
         }
     };

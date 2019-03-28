@@ -77,7 +77,13 @@ var setHeaders = (function () {
     }
     if (Object.keys(headers).length) {
         return function (req, res) {
-            const h = /^\/pad(2)?\/inner\.html.*/.test(req.url) ? padHeaders : headers;
+            const h = [
+                    /^\/pad(2)?\/inner\.html.*/,
+                    /^\/sheet\/inner\.html.*/,
+                    /^\/common\/onlyoffice\/.*\/index\.html.*/
+                ].some((regex) => {
+                    return regex.test(req.url)
+                }) ? padHeaders : headers;
             for (let header in h) { res.setHeader(header, h[header]); }
         };
     }

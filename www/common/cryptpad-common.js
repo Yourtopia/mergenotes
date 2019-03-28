@@ -118,7 +118,14 @@ define([
     };
     // Settings
     common.deleteAccount = function (cb) {
-        postMessage("DELETE_ACCOUNT", null, cb);
+        postMessage("DELETE_ACCOUNT", null, function (obj) {
+            if (obj.state) {
+                Feedback.send('DELETE_ACCOUNT_AUTOMATIC');
+            } else {
+                Feedback.send('DELETE_ACCOUNT_MANUAL');
+            }
+            cb(obj);
+        });
     };
     // Drive
     common.userObjectCommand = function (data, cb) {
@@ -247,8 +254,8 @@ define([
         postMessage("REMOVE_OWNED_CHANNEL", channel, cb);
     };
 
-    common.getDeletedPads = function (cb) {
-        postMessage("GET_DELETED_PADS", null, function (obj) {
+    common.getDeletedPads = function (data, cb) {
+        postMessage("GET_DELETED_PADS", data, function (obj) {
             if (obj && obj.error) { return void cb(obj.error); }
             cb(null, obj);
         });
@@ -493,9 +500,10 @@ define([
         });
     };
 
-    common.useTemplate = function (href, Crypt, cb, optsPut) {
+    common.useTemplate = function (data, Crypt, cb, optsPut) {
         // opts is used to overrides options for chainpad-netflux in cryptput
         // it allows us to add owners and expiration time if it is a new file
+        var href = data.href;
 
         var parsed = Hash.parsePadUrl(href);
         var parsed2 = Hash.parsePadUrl(window.location.href);
@@ -531,8 +539,13 @@ define([
                     }
                     if (typeof(meta) === "object") {
                         meta.defaultTitle = meta.title || meta.defaultTitle;
-                        delete meta.users;
                         meta.title = "";
+                        delete meta.users;
+                        delete meta.chat2;
+                        delete meta.chat;
+                        delete meta.cursor;
+                        if (data.chat) { meta.chat2 = data.chat; }
+                        if (data.cursor) { meta.cursor = data.cursor; }
                     }
                     val = JSON.stringify(parsed);
                 } catch (e) {
@@ -617,47 +630,27 @@ define([
         });
     };
 
+    // Onlyoffice
+    var onlyoffice = common.onlyoffice = {};
+    onlyoffice.execCommand = function (data, cb) {
+        postMessage("OO_COMMAND", data, cb);
+    };
+    onlyoffice.onEvent = Util.mkEvent();
+
     // Messenger
     var messenger = common.messenger = {};
-    messenger.getFriendList = function (cb) {
-        postMessage("CONTACTS_GET_FRIEND_LIST", null, cb);
-    };
-    messenger.getMyInfo = function (cb) {
-        postMessage("CONTACTS_GET_MY_INFO", null, cb);
-    };
-    messenger.getFriendInfo = function (curvePublic, cb) {
-        postMessage("CONTACTS_GET_FRIEND_INFO", curvePublic, cb);
-    };
-    messenger.removeFriend = function (curvePublic, cb) {
-        postMessage("CONTACTS_REMOVE_FRIEND", curvePublic, cb);
-    };
-    messenger.openFriendChannel = function (curvePublic, cb) {
-        postMessage("CONTACTS_OPEN_FRIEND_CHANNEL", curvePublic, cb);
-    };
-    messenger.getFriendStatus = function (curvePublic, cb) {
-        postMessage("CONTACTS_GET_FRIEND_STATUS", curvePublic, cb);
-    };
-    messenger.getMoreHistory = function (data, cb) {
-        postMessage("CONTACTS_GET_MORE_HISTORY", data, cb);
-    };
-    messenger.sendMessage = function (data, cb) {
-        postMessage("CONTACTS_SEND_MESSAGE", data, cb);
-    };
-    messenger.setChannelHead = function (data, cb) {
-        postMessage("CONTACTS_SET_CHANNEL_HEAD", data, cb);
-    };
-
     messenger.execCommand = function (data, cb) {
         postMessage("CHAT_COMMAND", data, cb);
     };
-
     messenger.onEvent = Util.mkEvent();
-    messenger.onMessageEvent = Util.mkEvent();
-    messenger.onJoinEvent = Util.mkEvent();
-    messenger.onLeaveEvent = Util.mkEvent();
-    messenger.onUpdateEvent = Util.mkEvent();
-    messenger.onFriendEvent = Util.mkEvent();
-    messenger.onUnfriendEvent = Util.mkEvent();
+
+    // Cursor
+    var cursor = common.cursor = {};
+    cursor.execCommand = function (data, cb) {
+        postMessage("CURSOR_COMMAND", data, cb);
+    };
+    cursor.onEvent = Util.mkEvent();
+
 
     // Pad RPC
     var pad = common.padRpc = {};
@@ -947,7 +940,12 @@ define([
             }
         }).nThen(function () {
             // We have the new drive, with the new login block
-            window.location.reload();
+            var feedbackKey = (password === newPassword)?
+                'OWNED_DRIVE_MIGRATION': 'PASSWORD_CHANGED';
+
+            Feedback.send(feedbackKey, undefined, function () {
+                window.location.reload();
+            });
         });
     };
 
@@ -960,7 +958,7 @@ define([
     common.autoStore.onStoreRequest = Util.mkEvent();
 
     common.getFullHistory = function (data, cb) {
-        postMessage("GET_FULL_HISTORY", data, cb);
+        postMessage("GET_FULL_HISTORY", data, cb, {timeout: 180000});
     };
     common.getHistoryRange = function (data, cb) {
         postMessage("GET_HISTORY_RANGE", data, cb);
@@ -1050,17 +1048,24 @@ define([
         cb();
     };
 
-    /*var onPing = function (data, cb) {
+    var onPing = function (data, cb) {
         cb();
     };
 
+    var timeout = false;
     var onTimeout = function () {
-        //alert("Timeout");
-    };*/
+        return;
+        /*
+        timeout = true;
+        common.onNetworkDisconnect.fire();
+        // FIXME: no UI in outer...
+        window.alert("Timeout error, please reload this tab");
+        */
+    };
 
     var queries = {
-        /*PING: onPing,
-        TIMEOUT: onTimeout,*/
+        PING: onPing,
+        TIMEOUT: onTimeout,
         REQUEST_LOGIN: requestLogin,
         UPDATE_METADATA: common.changeMetadata,
         UPDATE_TOKEN: function (data) {
@@ -1082,15 +1087,12 @@ define([
                 common.onNetworkReconnect.fire(data);
             });
         },
-        // Messenger
-        CONTACTS_MESSAGE: common.messenger.onMessageEvent.fire,
-        CONTACTS_JOIN: common.messenger.onJoinEvent.fire,
-        CONTACTS_LEAVE: common.messenger.onLeaveEvent.fire,
-        CONTACTS_UPDATE: common.messenger.onUpdateEvent.fire,
-        CONTACTS_FRIEND: common.messenger.onFriendEvent.fire,
-        CONTACTS_UNFRIEND: common.messenger.onUnfriendEvent.fire,
+        // OnlyOffice
+        OO_EVENT: common.onlyoffice.onEvent.fire,
         // Chat
         CHAT_EVENT: common.messenger.onEvent.fire,
+        // Cursor
+        CURSOR_EVENT: common.cursor.onEvent.fire,
         // Pad
         PAD_READY: common.padRpc.onReadyEvent.fire,
         PAD_MESSAGE: common.padRpc.onMessageEvent.fire,
@@ -1125,6 +1127,14 @@ define([
         return doesSupport;
     };
 
+    common.isWebRTCSupported = function () {
+        return Boolean(navigator.getUserMedia ||
+            navigator.webkitGetUserMedia ||
+            navigator.mozGetUserMedia ||
+            navigator.msGetUserMedia ||
+            window.RTCPeerConnection);
+    };
+
     common.ready = (function () {
         var env = {};
         var initialized = false;
@@ -1138,6 +1148,10 @@ define([
         var provideFeedback = function () {
             if (typeof(window.Proxy) === 'undefined') {
                 Feedback.send("NO_PROXIES");
+            }
+
+            if (!common.isWebRTCSupported()) {
+                Feedback.send("NO_WEBRTC");
             }
 
             var shimPattern = /CRYPTPAD_SHIM/;
@@ -1368,6 +1382,7 @@ define([
                     console.log('Outer ready');
                     Object.keys(queries).forEach(function (q) {
                         chan.on(q, function (data, cb) {
+                            if (timeout) { return; }
                             try {
                                 queries[q](data, cb);
                             } catch (e) {
@@ -1380,6 +1395,7 @@ define([
 
                     postMessage = function (cmd, data, cb, opts) {
                         cb = cb || function () {};
+                        if (timeout) { return void cb ({error: 'TIMEOUT'}); }
                         chan.query(cmd, data, function (err, data) {
                             if (err) { return void cb ({error: err}); }
                             cb(data);
@@ -1388,7 +1404,7 @@ define([
 
                     console.log('Posting CONNECT');
                     postMessage('CONNECT', cfg, function (data) {
-                        // XXX data should always exist
+                        // FIXME data should always exist
                         // this indicates a false condition in sharedWorker
                         // got here via a reference error:
                         // uncaught exception: TypeError: data is undefined

@@ -95,6 +95,7 @@ define([
                     if (!sharedFolder && fd.owners && fd.owners.indexOf(edPublic) !== -1
                         && channelId) {
                         if (channelId) { ownedRemoved.push(channelId); }
+                        Feedback.send('REMOVE_OWNED_CHANNEL');
                         removeOwnedChannel(channelId, function (obj) {
                             if (obj && obj.error) {
                                 // If the error is that the file is already removed, nothing to
@@ -107,7 +108,14 @@ define([
                                 Feedback.send('ERROR_DELETING_OWNED_PAD=' + channelId + '|' + obj.error, true);
                             }
                         });
+                        // Also remove the realtime channel for onlyoffice
+                        if (fd.rtChannel) {
+                            removeOwnedChannel(fd.rtChannel, function () {});
+                        }
+                        // XXX fd.lastVersion to delete the encrypted cp?
                     }
+                    if (fd.lastVersion) { toClean.push(Hash.hrefToHexChannelId(fd.lastVersion)); }
+                    if (fd.rtChannel) { toClean.push(fd.rtChannel); }
                     if (channelId) { toClean.push(channelId); }
                     if (exp.isSharedFolder(id)) {
                         delete files[SHARED_FOLDERS][id];
@@ -681,8 +689,20 @@ define([
                 var sf = files[SHARED_FOLDERS];
                 var rootFiles = exp.getFiles([ROOT]);
                 var root = exp.find([ROOT]);
+                var parsed, secret, el;
                 for (var id in sf) {
+                    el = sf[id];
                     id = Number(id);
+
+                    // Fix undefined hash
+                    parsed = Hash.parsePadUrl(el.href || el.roHref);
+                    secret = Hash.getSecrets('drive', parsed.hash, el.password);
+                    if (!secret.keys) {
+                        delete sf[id];
+                        continue;
+                    }
+
+                    // Fix shared folder not displayed in root
                     if (rootFiles.indexOf(id) === -1) {
                         console.log('missing' + id);
                         var newName = Hash.createChannelId();

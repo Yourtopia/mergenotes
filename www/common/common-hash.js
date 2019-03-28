@@ -12,6 +12,7 @@ define([
     var hexToBase64 = Util.hexToBase64;
     var base64ToHex = Util.base64ToHex;
     Hash.encodeBase64 = Nacl.util.encodeBase64;
+    Hash.decodeBase64 = Nacl.util.decodeBase64;
 
     // This implementation must match that on the server
     // it's used for a checksum
@@ -75,9 +76,10 @@ define([
         return s.replace(/\/+/g, '/');
     };
 
-    Hash.createChannelId = function () {
-        var id = uint8ArrayToHex(Crypto.Nacl.randomBytes(16));
-        if (id.length !== 32 || /[^a-f0-9]/.test(id)) {
+    Hash.ephemeralChannelLength = 34;
+    Hash.createChannelId = function (ephemeral) {
+        var id = uint8ArrayToHex(Crypto.Nacl.randomBytes(ephemeral? 17: 16));
+        if ([32, 34].indexOf(id.length) === -1 || /[^a-f0-9]/.test(id)) {
             throw new Error('channel ids must consist of 32 hex characters');
         }
         return id;
@@ -223,7 +225,7 @@ Version 1
         var ret = {};
 
         if (!href) { return ret; }
-        if (href.slice(-1) !== '/') { href += '/'; }
+        if (href.slice(-1) !== '/' && href.slice(-1) !== '#') { href += '/'; }
         href = href.replace(/\/\?[^#]+#/, '/#');
 
         var idx;
@@ -244,6 +246,7 @@ Version 1
         if (!/^https*:\/\//.test(href)) {
             idx = href.indexOf('/#');
             ret.type = href.slice(1, idx);
+            if (idx === -1) { return ret; }
             ret.hash = href.slice(idx + 2);
             ret.hashData = parseTypeHash(ret.type, ret.hash);
             return ret;
@@ -496,6 +499,28 @@ Version 1
         var type = parsed.type;
         var name = (Messages.type)[type] + ' - ' + getLocaleDate();
         return name;
+    };
+
+    Hash.isValidHref = function (href) {
+        // Non-empty href?
+        if (!href) { return; }
+        var parsed = Hash.parsePadUrl(href);
+        // Can be parsed?
+        if (!parsed) { return; }
+        // Link to a CryptPad app?
+        if (!parsed.type) { return; }
+        // Valid hash?
+        if (parsed.hash) {
+            if (!parsed.hashData) { return; }
+            // Version should be a number
+            if (typeof(parsed.hashData.version) === "undefined") { return; }
+            // pads and files should have a base64 (or hex) key
+            if (parsed.hashData.type === 'pad' || parsed.hashData.type === 'file') {
+                if (!parsed.hashData.key) { return; }
+                if (!/^[a-zA-Z0-9+-/=]+$/.test(parsed.hashData.key)) { return; }
+            }
+        }
+        return true;
     };
 
     return Hash;
